@@ -21,7 +21,9 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
     class_num = class_num-1
     #class_num = 3 now, because we do not need the last class (background)
     
-    image = np.transpose(image_, (1,2,0)).astype(np.uint8)
+    # image = np.transpose(image_, (1,2,0)).astype(np.uint8)
+    image = np.transpose(image_.cpu().numpy(), (1, 2, 0)).astype(np.uint8)
+    image = np.transpose(image, (1, 2, 0))
     image1 = np.zeros(image.shape,np.uint8)
     image2 = np.zeros(image.shape,np.uint8)
     image3 = np.zeros(image.shape,np.uint8)
@@ -34,27 +36,31 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
     #image2: draw ground truth "default" boxes on image2 (to show that you have assigned the object to the correct cell/cells)
     #image3: draw network-predicted bounding boxes on image3
     #image4: draw network-predicted "default" boxes on image4 (to show which cell does your network think that contains an object)
-    
-    
+
+    size = image.shape[1]
     #draw ground truth
     for i in range(len(ann_confidence)):
         for j in range(class_num):
             if ann_confidence[i,j]>0.5: #if the network/ground_truth has high confidence on cell[i] with class[j]
+                print("GT")
                 #TODO:
                 #image1: draw ground truth bounding boxes on image1
-                #image2: draw ground truth "default" boxes on image2 (to show that you have assigned the object to the correct cell/cells)
-                
-                #you can use cv2.rectangle as follows:
-                #start_point = (x1, y1) #top left corner, x1<x2, y1<y2
-                #end_point = (x2, y2) #bottom right corner
-                #color = colors[j] #use red green blue to represent different classes
-                #thickness = 2
-                #cv2.rectangle(image?, start_point, end_point, color, thickness)
+                gt_x, gt_y = boxs_default[i][2] * ann_box[i][0] + boxs_default[i][0], boxs_default[i][3] * ann_box[i][1] + boxs_default[i][1]
+                gt_w, gt_h = boxs_default[i][2] * np.exp(ann_box[i][2]), boxs_default[i][3] * np.exp(ann_box[i][3])
+                gt_start = (int((gt_x - gt_w / 2.0) * size), int((gt_y - gt_h / 2.0) * size))
+                gt_end = (int((gt_x + gt_w / 2.0) * size), int((gt_y + gt_h / 2.0) * size))
+                cv2.rectangle(image1, gt_start, gt_end, colors[j], thickness=2)
+                # image2: draw ground truth "default" boxes on image2 (to show that you have assigned the object to the correct cell/cells)
+                dx_min,dy_min,dx_max,dy_max = boxs_default[i][4:]
+                d_start = (int(dx_min * size), int(dy_min * size))
+                d_end = (int(dx_max * size), int(dy_max * size))
+                cv2.rectangle(image2, d_start, d_end, colors[j], thickness=2)
     
     #pred
     for i in range(len(pred_confidence)):
         for j in range(class_num):
             if pred_confidence[i,j]>0.5:
+                print("PRED")
                 #TODO:
                 #image3: draw network-predicted bounding boxes on image3
                 #image4: draw network-predicted "default" boxes on image4 (to show which cell does your network think that contains an object)
@@ -67,7 +73,8 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
     image[h:,:w] = image3
     image[h:,w:] = image4
     cv2.imshow(windowname+" [[gt_box,gt_dft],[pd_box,pd_dft]]",image)
-    cv2.waitKey(1)
+    cv2.waitKey(0)
+    # cv2.waitKey(1)
     #if you are using a server, you may not be able to display the image.
     #in that case, please save the image using cv2.imwrite and check the saved image for visualization.
 

@@ -1,18 +1,11 @@
-import torch
-import torch.nn as nn
-import torch.backends.cudnn as cudnn
-import torch.optim as optim
 import torch.utils.data
-import torchvision.datasets as dset
-import torchvision.transforms as transforms
-import torchvision.utils as vutils
-from torch.autograd import Variable
-import torch.nn.functional as F
 import numpy as np
 import os
 import cv2
 from torch.utils.tensorboard.summary import image
-
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+from torch.utils.data import random_split
 
 #generate default bounding boxes
 def default_box_generator(layers, large_scale, small_scale):
@@ -34,19 +27,17 @@ def default_box_generator(layers, large_scale, small_scale):
     #for a cell in layer[i], you should use ssize=small_scale[i] and lsize=large_scale[i].
     #the last dimension 8 means each default bounding box has 8 attributes: [x_center, y_center, box_width, box_height, x_min, y_min, x_max, y_max]
     box_num = 4 * sum([layer**2 for layer in layers]) # 4*(10*10+5*5+3*3+1*1) by default
-    boxes = np.zeros((box_num, 8))
-    idx = 0
+    boxes = []
 
     for i, layer in enumerate(layers):
         grid_size = layer # 10,5,3,1
         lsize = large_scale[i]
         ssize = small_scale[i]
-        step = 1.0 / grid_size
 
         for y in range(grid_size):
             for x in range(grid_size):
-                x_center = (x + 0.5) * step
-                y_center = (y + 0.5) * step
+                x_center = (x + 0.5)/ grid_size
+                y_center = (y + 0.5)/ grid_size
 
                 sizes = [
                     (ssize, ssize),
@@ -56,14 +47,16 @@ def default_box_generator(layers, large_scale, small_scale):
                 ]
 
                 for w,h in sizes:
-                    x_min = max(0, x_center - w / 2) # apply clipping
-                    x_max = min(1, x_center + w / 2)
-                    y_min = max(0, y_center - h / 2)
-                    y_max = min(1, y_center + h / 2)
+                    x_min = x_center - w / 2 # apply clipping
+                    x_max = x_center + w / 2
+                    y_min = y_center - h / 2
+                    y_max = y_center + h / 2
 
-                    boxes[idx] = [x_center, y_center, w, h, x_min, y_min, x_max, y_max]
-                    idx += 1
-
+                    box = np.array([x_center, y_center, w, h, x_min, y_min, x_max, y_max])
+                    boxes.append(box)
+    boxes = np.array(boxes)
+    boxes = np.clip(boxes, 0, 1)
+    boxes.reshape(box_num, 8)
     return boxes
 
 
@@ -110,15 +103,18 @@ def match(ann_box,ann_confidence,boxs_default,threshold,cat_id,x_min,y_min,x_max
     #update ann_box and ann_confidence, with respect to the ious and the default bounding boxes.
     #if a default bounding box and the ground truth bounding box have iou>threshold, then we will say this default bounding box is carrying an object.
     #this default bounding box will be used to update the corresponding entry in ann_box and ann_confidence
-    for i in np.where(ious_true)[0]:
+    for i in np.where(ious_true == 1)[0]:
         px,py,pw,ph = boxs_default[i][:4] # get from default box
-
+        print(f'px,py,pw,ph = {px,py,pw,ph}')
+        print(f'gx,gy,gw,gh = {gx, gy, gw, gh}')
         tx = (gx - px) / pw
         ty = (gy - py) / ph
         tw = np.log(gw / pw)
         th = np.log(gh / ph)
 
+        # ann_box[i] = [abs(tx),abs(ty),abs(tw),abs(th)]
         ann_box[i] = [tx,ty,tw,th]
+        print(ann_box[i])
         ann_confidence[i][-1] = 0 # remove background label
         ann_confidence[i][cat_id] = 1 #cat dog person background
 
@@ -127,7 +123,6 @@ def match(ann_box,ann_confidence,boxs_default,threshold,cat_id,x_min,y_min,x_max
     # update ann_box and ann_confidence (do the same thing as above)
     if ious.max() < threshold:
         ious_true = np.argmax(ious)
-
         px, py, pw, ph = boxs_default[ious_true][:4]  # get from default box
 
         tx = (gx - px) / pw
@@ -136,13 +131,17 @@ def match(ann_box,ann_confidence,boxs_default,threshold,cat_id,x_min,y_min,x_max
         th = np.log(gh / ph)
 
         print(tx,ty,tw,th)
+        # ann_box[ious_true] = [abs(tx),abs(ty),abs(tw),abs(th)]
         ann_box[ious_true] = [tx, ty, tw, th]
+        print(ann_box[ious_true])
         ann_confidence[ious_true][-1] = 0 # remove background label
         ann_confidence[ious_true][cat_id] = 1  # cat dog person background
 
 
 class COCO(torch.utils.data.Dataset):
-    def __init__(self, imgdir, anndir, class_num, boxs_default, train = True, image_size=320):
+
+    def __init__(self, imgdir, anndir, class_num, boxs_default, train = True, test = False, image_size=320):
+        self.test = test
         self.train = train
         self.imgdir = imgdir
         self.anndir = anndir
@@ -159,13 +158,27 @@ class COCO(torch.utils.data.Dataset):
         #notice:
         #you can split the dataset into 90% training and 10% validation here, by slicing self.img_names with respect to self.train
 
-        # split train set & test set
-        idx = int(0.9 * len(self.img_names))
-        if self.train:
-            self.img_names = self.img_names[:idx]
-        else:
-            self.img_names = self.img_names[idx:]
+        # split train set & val set
+        self.train_set, self.val_set = random_split(self.img_names, (0.9, 0.1))
+        if self.test: # test
+            pass
+        elif self.train: # train
+            self.img_names = self.train_set
+        else:           # validation
+            self.img_names = self.val_set
 
+        self.train_transforms = A.Compose([
+            A.Resize(self.image_size, self.image_size),
+            # A.RandomCrop(224, 224),
+            A.HorizontalFlip(),
+            A.Rotate(limit=10, p=0.5),
+            A.RandomBrightnessContrast(p=0.3),
+            ToTensorV2()
+        ])
+        self.test_transforms = A.Compose([
+            A.Resize(self.image_size, self.image_size),
+            ToTensorV2()
+        ])
     def __len__(self):
         return len(self.img_names)
 
@@ -188,31 +201,25 @@ class COCO(torch.utils.data.Dataset):
         image = cv2.imread(img_name)
 
         img_width,img_height,_ = image.shape
+
         print(img_width,img_height)
         #2. prepare ann_box and ann_confidence, by reading txt file "ann_name" first.
-        # 0000.txt: 1 406.3 197.82 171.64 167.76
         with open(ann_name, 'r') as f:
             for line in f:
-
                 ann_data = line.strip().split(' ')
                 class_id = int(ann_data[0])
                 gx, gy, gw, gh = float(ann_data[1]),float(ann_data[2]),float(ann_data[3]),float(ann_data[4])
                 # gx, gy, gw, gh = gx/img_width, gy/img_height, gw/img_width, gh/img_height  # normalization
                 x_min, y_min, x_max, y_max = gx, gy, gx + gw, gy + gh
                 x_min, y_min, x_max, y_max = x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height
-
+                # 3. use the above function "match" to update ann_box and ann_confidence, for each bounding box in "ann_name".
                 match(ann_box,ann_confidence,self.boxs_default,self.threshold,class_id,x_min,y_min,x_max,y_max)
-        #3. use the above function "match" to update ann_box and ann_confidence, for each bounding box in "ann_name".
+
 
         #4. Data augmentation. You need to implement random cropping first. You can try adding other augmentations to get better results.
-        
-        #to use function "match":
-        #match(ann_box,ann_confidence,self.boxs_default,self.threshold,class_id,x_min,y_min,x_max,y_max)
-        #where [x_min,y_min,x_max,y_max] is from the ground truth bounding box, normalized with respect to the width or height of the image.
-        
-        #note: please make sure x_min,y_min,x_max,y_max are normalized with respect to the width or height of the image.
-        #For example, point (x=100, y=200) in a image with (width=1000, height=500) will be normalized to (x/width=0.1,y/height=0.4)
-
-        # image = cv2.resize(image, (self.image_size, self.image_size))
+        if self.train:
+            image = self.train_transforms(image=image)['image']
+        else:
+            image = self.test_transforms(image=image)['image']
         image = np.transpose(image, (2, 0, 1))
         return image, ann_box, ann_confidence
