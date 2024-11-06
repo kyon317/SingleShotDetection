@@ -105,8 +105,6 @@ def match(ann_box,ann_confidence,boxs_default,threshold,cat_id,x_min,y_min,x_max
     #this default bounding box will be used to update the corresponding entry in ann_box and ann_confidence
     for i in np.where(ious_true == 1)[0]:
         px,py,pw,ph = boxs_default[i][:4] # get from default box
-        print(f'px,py,pw,ph = {px,py,pw,ph}')
-        print(f'gx,gy,gw,gh = {gx, gy, gw, gh}')
         tx = (gx - px) / pw
         ty = (gy - py) / ph
         tw = np.log(gw / pw)
@@ -114,9 +112,8 @@ def match(ann_box,ann_confidence,boxs_default,threshold,cat_id,x_min,y_min,x_max
 
         # ann_box[i] = [abs(tx),abs(ty),abs(tw),abs(th)]
         ann_box[i] = [tx,ty,tw,th]
-        print(ann_box[i])
-        ann_confidence[i][-1] = 0 # remove background label
-        ann_confidence[i][cat_id] = 1 #cat dog person background
+        ann_confidence[i, :] = 0 # remove background label
+        ann_confidence[i, cat_id] = 1 #cat dog person background
 
     # TODO:
     # make sure at least one default bounding box is used
@@ -124,19 +121,15 @@ def match(ann_box,ann_confidence,boxs_default,threshold,cat_id,x_min,y_min,x_max
     if ious.max() < threshold:
         ious_true = np.argmax(ious)
         px, py, pw, ph = boxs_default[ious_true][:4]  # get from default box
-
         tx = (gx - px) / pw
         ty = (gy - py) / ph
         tw = np.log(gw / pw)
         th = np.log(gh / ph)
 
-        print(tx,ty,tw,th)
         # ann_box[ious_true] = [abs(tx),abs(ty),abs(tw),abs(th)]
         ann_box[ious_true] = [tx, ty, tw, th]
-        print(ann_box[ious_true])
-        ann_confidence[ious_true][-1] = 0 # remove background label
-        ann_confidence[ious_true][cat_id] = 1  # cat dog person background
-
+        ann_confidence[ious_true,:] = 0 # remove background label
+        ann_confidence[ious_true, cat_id] = 1  # cat dog person background
 
 class COCO(torch.utils.data.Dataset):
 
@@ -166,15 +159,20 @@ class COCO(torch.utils.data.Dataset):
             self.img_names = self.train_set
         else:           # validation
             self.img_names = self.val_set
-
+        # reference: https://albumentations.ai/docs/getting_started/bounding_boxes_augmentation/
         self.train_transforms = A.Compose([
             A.Resize(self.image_size, self.image_size),
-            # A.RandomCrop(224, 224),
-            A.HorizontalFlip(),
+            A.RandomCrop(224, 224, p = 0.5),
+            A.GridDropout(ratio=0.3, unit_size_range=(10, 100), random_offset=True, p=0.5),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.2),
             A.Rotate(limit=10, p=0.5),
+            A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5),
             A.RandomBrightnessContrast(p=0.3),
+            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
+            A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
             ToTensorV2()
-        ])
+        ], bbox_params=A.BboxParams(format='pascal_voc',min_area=100, label_fields=['labels']))
         self.test_transforms = A.Compose([
             A.Resize(self.image_size, self.image_size),
             ToTensorV2()
@@ -186,9 +184,9 @@ class COCO(torch.utils.data.Dataset):
         ann_box = np.zeros([self.box_num,4], np.float32) #bounding boxes
         ann_confidence = np.zeros([self.box_num,self.class_num], np.float32) #one-hot vectors
         #one-hot vectors with four classes
-        #[1,0,0,0] -> cat
-        #[0,1,0,0] -> dog
-        #[0,0,1,0] -> person
+        #[1,0,0,0] -> cat blue
+        #[0,1,0,0] -> dog green
+        #[0,0,1,0] -> person red
         #[0,0,0,1] -> background
         
         ann_confidence[:,-1] = 1 #the default class for all cells is set to "background"
@@ -201,25 +199,34 @@ class COCO(torch.utils.data.Dataset):
         image = cv2.imread(img_name)
 
         img_width,img_height,_ = image.shape
-
         print(img_width,img_height)
+        bboxes = []
+        labels = []
         #2. prepare ann_box and ann_confidence, by reading txt file "ann_name" first.
         with open(ann_name, 'r') as f:
             for line in f:
                 ann_data = line.strip().split(' ')
                 class_id = int(ann_data[0])
                 gx, gy, gw, gh = float(ann_data[1]),float(ann_data[2]),float(ann_data[3]),float(ann_data[4])
-                # gx, gy, gw, gh = gx/img_width, gy/img_height, gw/img_width, gh/img_height  # normalization
                 x_min, y_min, x_max, y_max = gx, gy, gx + gw, gy + gh
-                x_min, y_min, x_max, y_max = x_min / img_width, y_min / img_height, x_max / img_width, y_max / img_height
-                # 3. use the above function "match" to update ann_box and ann_confidence, for each bounding box in "ann_name".
-                match(ann_box,ann_confidence,self.boxs_default,self.threshold,class_id,x_min,y_min,x_max,y_max)
+                bboxes.append([x_min, y_min, x_max, y_max])
+                labels.append(class_id)
 
 
         #4. Data augmentation. You need to implement random cropping first. You can try adding other augmentations to get better results.
         if self.train:
-            image = self.train_transforms(image=image)['image']
+            transformed = self.train_transforms(image=image,bboxes=bboxes,labels=labels)
+            image = transformed['image']
+            bboxes = transformed['bboxes']
+            labels = transformed['labels']
         else:
             image = self.test_transforms(image=image)['image']
+        for i,box in enumerate(bboxes):
+            x_min, y_min, x_max, y_max = box
+            # Normalization
+            x_min, y_min, x_max, y_max = x_min / self.image_size, y_min / self.image_size, x_max / self.image_size, y_max / self.image_size
+            x_min, y_min, x_max, y_max = np.clip([x_min, y_min, x_max, y_max], 0, 1)
+            # 3. use the above function "match" to update ann_box and ann_confidence, for each bounding box in "ann_name".
+            match(ann_box, ann_confidence, self.boxs_default, self.threshold, int(labels[i]), x_min, y_min, x_max, y_max)
         image = np.transpose(image, (2, 0, 1))
         return image, ann_box, ann_confidence

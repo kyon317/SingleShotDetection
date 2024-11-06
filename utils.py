@@ -37,24 +37,26 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
     #image3: draw network-predicted bounding boxes on image3
     #image4: draw network-predicted "default" boxes on image4 (to show which cell does your network think that contains an object)
 
-    size = image.shape[1]
+    w,h,_ = image.shape
     #draw ground truth
     for i in range(len(ann_confidence)):
         for j in range(class_num):
-            if ann_confidence[i,j]>0.5: #if the network/ground_truth has high confidence on cell[i] with class[j]
+            if ann_confidence[i,j]==1: #if the network/ground_truth has high confidence on cell[i] with class[j]
                 print("GT")
                 #TODO:
                 #image1: draw ground truth bounding boxes on image1
-                gt_x, gt_y = boxs_default[i][2] * ann_box[i][0] + boxs_default[i][0], boxs_default[i][3] * ann_box[i][1] + boxs_default[i][1]
-                gt_w, gt_h = boxs_default[i][2] * np.exp(ann_box[i][2]), boxs_default[i][3] * np.exp(ann_box[i][3])
-                gt_start = (int((gt_x - gt_w / 2.0) * size), int((gt_y - gt_h / 2.0) * size))
-                gt_end = (int((gt_x + gt_w / 2.0) * size), int((gt_y + gt_h / 2.0) * size))
+                # [x_center, y_center, w, h, x_min, y_min, x_max, y_max]
+                gt_x, gt_y = boxs_default[i,2] * ann_box[i,0] + boxs_default[i,0], boxs_default[i,3] * ann_box[i,1] + boxs_default[i,1]
+                gt_w, gt_h = boxs_default[i,2] * np.exp(ann_box[i,2]), boxs_default[i,3] * np.exp(ann_box[i,3])
+                gt_start = (int((gt_x - gt_w / 2.0) * w), int((gt_y - gt_h / 2.0) * h))
+                gt_end = (int((gt_x + gt_w / 2.0) * w), int((gt_y + gt_h / 2.0) * h))
                 cv2.rectangle(image1, gt_start, gt_end, colors[j], thickness=2)
                 # image2: draw ground truth "default" boxes on image2 (to show that you have assigned the object to the correct cell/cells)
-                dx_min,dy_min,dx_max,dy_max = boxs_default[i][4:]
-                d_start = (int(dx_min * size), int(dy_min * size))
-                d_end = (int(dx_max * size), int(dy_max * size))
+                dx_min,dy_min,dx_max,dy_max = boxs_default[i,4:]
+                d_start = (int(dx_min * w), int(dy_min * h))
+                d_end = (int(dx_max * w), int(dy_max * h))
                 cv2.rectangle(image2, d_start, d_end, colors[j], thickness=2)
+                print(f'{gt_x,gt_y,dx_min,dy_min,dx_max,dy_max}')
     
     #pred
     for i in range(len(pred_confidence)):
@@ -63,8 +65,18 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
                 print("PRED")
                 #TODO:
                 #image3: draw network-predicted bounding boxes on image3
+                gt_x, gt_y = boxs_default[i, 2] * pred_box[i, 0] + boxs_default[i, 0], boxs_default[i, 3] * pred_box[
+                    i, 1] + boxs_default[i, 1]
+                gt_w, gt_h = boxs_default[i, 2] * np.exp(pred_box[i, 2]), boxs_default[i, 3] * np.exp(pred_box[i, 3])
+                gt_start = (int((gt_x - gt_w / 2.0) * w), int((gt_y - gt_h / 2.0) * h))
+                gt_end = (int((gt_x + gt_w / 2.0) * w), int((gt_y + gt_h / 2.0) * h))
+                cv2.rectangle(image3, gt_start, gt_end, colors[j], thickness=2)
                 #image4: draw network-predicted "default" boxes on image4 (to show which cell does your network think that contains an object)
-    
+                dx_min, dy_min, dx_max, dy_max = boxs_default[i, 4:]
+                d_start = (int(dx_min * w), int(dy_min * h))
+                d_end = (int(dx_max * w), int(dy_max * h))
+                cv2.rectangle(image4, d_start, d_end, colors[j], thickness=2)
+                print(f'{gt_x, gt_y, dx_min, dy_min, dx_max, dy_max}')
     #combine four images into one
     h,w,_ = image1.shape
     image = np.zeros([h*2,w*2,3], np.uint8)
@@ -93,7 +105,41 @@ def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.5, thresh
     #depends on your implementation.
     #if you wish to reuse the visualize_pred function above, you need to return a "suppressed" version of confidence [5,5, num_of_classes].
     #you can also directly return the final bounding boxes and classes, and write a new visualization function for that.
-    pass
+    num_boxes, num_cls = confidence_.shape
+    conf = np.copy(confidence_)
+    reference_box = np.zeros_like(boxs_default)
+    px, py, pw, ph = boxs_default[:,0], boxs_default[:,1], boxs_default[:,2], boxs_default[:,3]
+    reference_box[:,0] = pw*box_[:,0] + px    # gx = pw*dx + px
+    reference_box[:,1] = py*box_[:,1] + py    # gy = py*dy + py
+    reference_box[:,2] = pw*np.exp(box_[:,2])   # gw = pw * exp(dw)
+    reference_box[:,3] = ph*np.exp(box_[:,3])   # gh = ph * exp(dh)
+    reference_box[:,4] = reference_box[:,0] - reference_box[:,2] / 2 # min_x
+    reference_box[:,5] = reference_box[:,1] - reference_box[:,3] / 2 # min_y
+    reference_box[:,6] = reference_box[:,0] + reference_box[:,2] / 2 # max_x
+    reference_box[:,7] = reference_box[:,1] + reference_box[:,3] / 2 # max_y
+
+    B_box = []
+    # pick the one with the highest probability in classes
+    max_conf = np.max(conf[:,0:num_cls-1], axis=1)
+    # pick indices > threshold
+    A_box = np.where(max_conf >= threshold)[0]
+    if len(A_box) == 0: # pick max if no indices > threshold
+        B_box.append(np.argmax(max_conf))
+    while len(A_box) > 0:
+        max_idx = np.argmax(max_conf[A_box])
+        x = A_box[max_idx]
+        B_box.append(x)
+        # remove from A
+        A_box = np.delete(A_box, max_idx)
+        A_box_ = reference_box[A_box]
+        max_box_reference = reference_box[x]
+        ious = iou(A_box_, max_box_reference[4],max_box_reference[5],max_box_reference[6],max_box_reference[7])
+        overlaps = np.where(ious > overlap)[0]
+        A_box = np.delete(A_box, overlaps)
+    pred_confidence_, pred_box_ = np.zeros_like(confidence_),np.copy(box_)
+    for idx in B_box:
+        pred_confidence_[idx] = confidence_[idx]
+    return np.array(pred_confidence_),pred_box_
 
 def generate_mAP():
     #TODO: Generate mAP

@@ -37,8 +37,29 @@ def SSD_loss(pred_confidence, pred_box, ann_confidence, ann_box):
     #and reshape box to [batch_size*num_of_boxes, 4].
     #Then you need to figure out how you can get the indices of all cells carrying objects,
     #and use confidence[indices], box[indices] to select those cells.
+    batch_size, num_box,num_classes = pred_confidence.shape
 
+    pred_confidence = pred_confidence.view(batch_size * num_box, num_classes)
+    pred_box = pred_box.view(batch_size * num_box, 4)
+    ann_confidence = ann_confidence.view(batch_size * num_box, num_classes)
+    ann_box = ann_box.view(batch_size * num_box, 4)
 
+    obj_indices = torch.where(ann_confidence[:,-1] != 1)
+    noobj_indices = torch.where(ann_confidence[:,-1] == 1)
+
+    obj_conf = pred_confidence[obj_indices]
+    obj_conf_gt = ann_confidence[obj_indices]
+
+    noobj_conf = pred_confidence[noobj_indices]
+    noobj_conf_gt = ann_confidence[noobj_indices]
+
+    obj_box = pred_box[obj_indices]
+    obj_box_gt = ann_box[obj_indices]
+
+    loss_cls = F.cross_entropy(obj_conf, obj_conf_gt) + 3 * F.cross_entropy(noobj_conf, noobj_conf_gt)
+    loss_box = F.smooth_l1_loss(obj_box, obj_box_gt)
+
+    return loss_cls + loss_box
 
 
 class SSD(nn.Module):
