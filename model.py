@@ -48,16 +48,16 @@ def SSD_loss(pred_confidence, pred_box, ann_confidence, ann_box):
     obj_indices = torch.where(ann_confidence[:, -1] != 1)[0]
     noobj_indices = torch.where(ann_confidence[:, -1] == 1)[0]
 
-    obj_conf = pred_confidence[obj_indices]
+    obj_conf_pred = pred_confidence[obj_indices]
     obj_conf_gt = ann_confidence[obj_indices].argmax(dim=-1) # convert one-hot to class
 
-    noobj_conf = pred_confidence[noobj_indices]
+    noobj_conf_pred = pred_confidence[noobj_indices]
     noobj_conf_gt = ann_confidence[noobj_indices].argmax(dim=-1)
 
     obj_box = pred_box[obj_indices]
     obj_box_gt = ann_box[obj_indices]
 
-    loss_cls = F.cross_entropy(obj_conf, obj_conf_gt) + 3 * F.cross_entropy(noobj_conf, noobj_conf_gt)
+    loss_cls = F.cross_entropy(obj_conf_pred, obj_conf_gt) + 3 * F.cross_entropy(noobj_conf_pred, noobj_conf_gt)
     loss_box = F.smooth_l1_loss(obj_box, obj_box_gt)
 
     return loss_cls + loss_box

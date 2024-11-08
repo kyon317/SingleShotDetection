@@ -31,7 +31,7 @@ args = parser.parse_args()
 
 class_num = 4 #cat dog person background
 
-num_epochs = 100
+num_epochs = 200
 batch_size = 32
 
 
@@ -49,10 +49,10 @@ if not args.test:
     dataset_val = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False,test=False,image_size=320)
     
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=batch_size, shuffle=False, num_workers=0)
+    dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=batch_size, shuffle=True, num_workers=0)
     
     optimizer = optim.Adam(network.parameters(), lr = 1e-3)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=1, min_lr=1e-6)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, min_lr=1e-6)
     #feel free to try other optimizers and parameters.
     
     start_time = time.time()
@@ -82,7 +82,7 @@ if not args.test:
             loss_net.backward()
             optimizer.step()
             
-            avg_loss += loss_net.data
+            avg_loss += loss_net.item()
             avg_count += 1
             current_loss = avg_loss / avg_count
 
