@@ -29,10 +29,12 @@ if __name__ == '__main__':
     dataset = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train=True, test = False,image_size=320)
     dataset_test = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train=False, test=True, image_size=320)
     image, ann_box, ann_confidence = dataset[0]
-    # visualize_pred("dataset[2]", ann_confidence,ann_box,ann_confidence,ann_box,image,boxs_default)
+
+    image = np.array(image)
+    visualize_pred("dataset[2]", ann_confidence,ann_box,ann_confidence,ann_box,image,boxs_default)
     # draw_annotation_box()
-    x,y = utils.non_maximum_suppression(ann_confidence,ann_box,boxs_default)
-    visualize_pred("dataset[2]", x,y,ann_confidence,ann_box,image,boxs_default)
-    print(x, y)
+    # x,y = utils.non_maximum_suppression(ann_confidence,ann_box,boxs_default)
+
+    # visualize_pred("dataset[2]", x,y,ann_confidence,ann_box,image,boxs_default)
 
 

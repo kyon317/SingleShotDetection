@@ -14,11 +14,12 @@ import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from dataset import *
 from model import *
 from utils import *
-
+from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument('--test', action='store_true')
 args = parser.parse_args()
@@ -45,27 +46,35 @@ cudnn.benchmark = True
 
 if not args.test:
     dataset = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = True,test=False,image_size=320)
-    dataset_test = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False, test=True,image_size=320)
+    dataset_val = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False,test=False,image_size=320)
     
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=batch_size, shuffle=True, num_workers=0)
+    dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=batch_size, shuffle=False, num_workers=0)
     
-    optimizer = optim.Adam(network.parameters(), lr = 1e-4)
+    optimizer = optim.Adam(network.parameters(), lr = 1e-3)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=1, min_lr=1e-6)
     #feel free to try other optimizers and parameters.
     
     start_time = time.time()
+    precision_, recall_, thres = 0,0,0.6
+    device = ('cuda' if torch.cuda.is_available() else 'cpu')
 
+    #TRAINING
     for epoch in range(num_epochs):
-        #TRAINING
+
         network.train()
 
         avg_loss = 0
         avg_count = 0
-        for i, data in enumerate(dataloader, 0):
+        current_loss = 0
+        # Wrap the training loop with tqdm for progress bar
+        progress_bar = tqdm(dataloader, desc=f"Training Epoch {epoch + 1}/{num_epochs}")
+        for i, data in enumerate(progress_bar, 0):
             images_, ann_box_, ann_confidence_ = data
-            images = images_.cuda()
-            ann_box = ann_box_.cuda()
-            ann_confidence = ann_confidence_.cuda()
+            images = images_.to(device).float()
+
+            ann_box = ann_box_.to(device)
+            ann_confidence = ann_confidence_.to(device)
 
             optimizer.zero_grad()
             pred_confidence, pred_box = network(images)
@@ -75,13 +84,17 @@ if not args.test:
             
             avg_loss += loss_net.data
             avg_count += 1
+            current_loss = avg_loss / avg_count
 
-        print('[%d] time: %f train loss: %f' % (epoch, time.time()-start_time, avg_loss/avg_count))
+            progress_bar.set_description(f"Training Epoch {epoch + 1}/{num_epochs}, Train_Loss: {current_loss:.4f}")
+        # reduce lr if stuck in a plateau for 5 epochs
+        scheduler.step(current_loss)
+        print('[%d] time: %f train loss: %f' % (epoch, time.time()-start_time, current_loss))
         
         #visualize
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
-        visualize_pred("train", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
+        # visualize_pred("train", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
         
         
         #VALIDATION
@@ -89,25 +102,30 @@ if not args.test:
         
         # TODO: split the dataset into 90% training and 10% validation
         # use the training set to train and the validation set to evaluate
-        
-        for i, data in enumerate(dataloader_test, 0):
+        progress_bar = tqdm(dataloader_val, desc=f"Validation Epoch {epoch + 1}/{num_epochs}")
+        val_loss,val_loss_count,avg_val_loss = 0, 0, 0
+        # Use tqdm for the validation loop as well
+        for i, data in enumerate(progress_bar, 0):
             images_, ann_box_, ann_confidence_ = data
-            images = images_.cuda()
-            ann_box = ann_box_.cuda()
-            ann_confidence = ann_confidence_.cuda()
+            images = images_.to(device)
+
+            ann_box = ann_box_.to(device)
+            ann_confidence = ann_confidence_.to(device)
 
             pred_confidence, pred_box = network(images)
             
             pred_confidence_ = pred_confidence.detach().cpu().numpy()
             pred_box_ = pred_box.detach().cpu().numpy()
-            
+
+
+            progress_bar.set_description(f"Validation Epoch {epoch + 1}/{num_epochs}, mAP: {precision_:.4f}, Recall: {recall_:.4f}")
             #optional: implement a function to accumulate precision and recall to compute mAP or F1.
-            #update_precision_recall(pred_confidence_, pred_box_, ann_confidence_.numpy(), ann_box_.numpy(), boxs_default,precision_,recall_,thres)
-        
+            # generate_mAP(pred_confidence_, pred_box_, ann_confidence_.detach().cpu().numpy(), ann_box_.detach().cpu().numpy(), boxs_default,precision_,recall_,thres)
+
         #visualize
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
-        visualize_pred("val", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
+        # visualize_pred("val", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
         
         #optional: compute F1
         #F1score = 2*precision*recall/np.maximum(precision+recall,1e-8)
@@ -118,11 +136,14 @@ if not args.test:
             #save last network
             print('saving net...')
             torch.save(network.state_dict(), 'network.pth')
+            #save last network
+        # print('saving net...')
+        # torch.save(network.state_dict(), 'network.pth')
 
 
 else:
     #TEST
-    dataset_test = COCO("data/test/images/", "data/test/annotations/", class_num, boxs_default, train = False, image_size=320)
+    dataset_test = COCO("data/test/images/", "data/test/annotations/", class_num, boxs_default, train = False, test = True, image_size=320)
     dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=0)
     network.load_state_dict(torch.load('network.pth'))
     network.eval()
@@ -138,13 +159,13 @@ else:
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
         
-        #pred_confidence_,pred_box_ = non_maximum_suppression(pred_confidence_,pred_box_,boxs_default)
-        
+        pred_confidence_,pred_box_ = non_maximum_suppression(pred_confidence_,pred_box_,boxs_default)
+        # print(np.max(pred_box),np.max(pred_confidence_))
         #TODO: save predicted bounding boxes and classes to a txt file.
         #you will need to submit those files for grading this assignment
-        
-        visualize_pred("test", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
-        cv2.waitKey(1000)
+        if i % 100 == 0:
+            visualize_pred("test", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
+            cv2.waitKey(1000)
 
 
 

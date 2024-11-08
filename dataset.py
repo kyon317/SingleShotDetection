@@ -162,7 +162,7 @@ class COCO(torch.utils.data.Dataset):
         # reference: https://albumentations.ai/docs/getting_started/bounding_boxes_augmentation/
         self.train_transforms = A.Compose([
             A.Resize(self.image_size, self.image_size),
-            A.RandomCrop(224, 224, p = 0.5),
+            A.RandomCrop(224, 224, pad_if_needed = True, p = 0.5),
             A.GridDropout(ratio=0.3, unit_size_range=(10, 100), random_offset=True, p=0.5),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.2),
@@ -171,6 +171,7 @@ class COCO(torch.utils.data.Dataset):
             A.RandomBrightnessContrast(p=0.3),
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
             A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
+            A.Resize(self.image_size, self.image_size),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc',min_area=100, label_fields=['labels']))
         self.test_transforms = A.Compose([
@@ -198,19 +199,22 @@ class COCO(torch.utils.data.Dataset):
         #1. prepare the image [3,320,320], by reading image "img_name" first.
         image = cv2.imread(img_name)
 
-        img_width,img_height,_ = image.shape
-        print(img_width,img_height)
+        img_width,img_height,img_channel = image.shape
+
         bboxes = []
         labels = []
         #2. prepare ann_box and ann_confidence, by reading txt file "ann_name" first.
-        with open(ann_name, 'r') as f:
-            for line in f:
-                ann_data = line.strip().split(' ')
-                class_id = int(ann_data[0])
-                gx, gy, gw, gh = float(ann_data[1]),float(ann_data[2]),float(ann_data[3]),float(ann_data[4])
-                x_min, y_min, x_max, y_max = gx, gy, gx + gw, gy + gh
-                bboxes.append([x_min, y_min, x_max, y_max])
-                labels.append(class_id)
+        if self.test: # only have txt for training and validation
+            pass
+        else:
+            with open(ann_name, 'r') as f:
+                for line in f:
+                    ann_data = line.strip().split(' ')
+                    class_id = int(ann_data[0])
+                    gx, gy, gw, gh = float(ann_data[1]),float(ann_data[2]),float(ann_data[3]),float(ann_data[4])
+                    x_min, y_min, x_max, y_max = gx, gy, gx + gw, gy + gh
+                    bboxes.append([x_min, y_min, x_max, y_max])
+                    labels.append(class_id)
 
 
         #4. Data augmentation. You need to implement random cropping first. You can try adding other augmentations to get better results.
@@ -228,5 +232,5 @@ class COCO(torch.utils.data.Dataset):
             x_min, y_min, x_max, y_max = np.clip([x_min, y_min, x_max, y_max], 0, 1)
             # 3. use the above function "match" to update ann_box and ann_confidence, for each bounding box in "ann_name".
             match(ann_box, ann_confidence, self.boxs_default, self.threshold, int(labels[i]), x_min, y_min, x_max, y_max)
-        image = np.transpose(image, (2, 0, 1))
+
         return image, ann_box, ann_confidence

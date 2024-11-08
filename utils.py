@@ -2,7 +2,6 @@ import numpy as np
 import cv2
 from dataset import iou
 
-
 colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
 #use [blue green red] to represent different classes
 
@@ -18,12 +17,10 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
     
     _, class_num = pred_confidence.shape
     #class_num = 4
-    class_num = class_num-1
+    class_num = class_num - 1
     #class_num = 3 now, because we do not need the last class (background)
-    
-    # image = np.transpose(image_, (1,2,0)).astype(np.uint8)
-    image = np.transpose(image_.cpu().numpy(), (1, 2, 0)).astype(np.uint8)
-    image = np.transpose(image, (1, 2, 0))
+
+    image = np.transpose(image_, (1, 2, 0)).astype(np.uint8)
     image1 = np.zeros(image.shape,np.uint8)
     image2 = np.zeros(image.shape,np.uint8)
     image3 = np.zeros(image.shape,np.uint8)
@@ -42,7 +39,6 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
     for i in range(len(ann_confidence)):
         for j in range(class_num):
             if ann_confidence[i,j]==1: #if the network/ground_truth has high confidence on cell[i] with class[j]
-                print("GT")
                 #TODO:
                 #image1: draw ground truth bounding boxes on image1
                 # [x_center, y_center, w, h, x_min, y_min, x_max, y_max]
@@ -56,13 +52,12 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
                 d_start = (int(dx_min * w), int(dy_min * h))
                 d_end = (int(dx_max * w), int(dy_max * h))
                 cv2.rectangle(image2, d_start, d_end, colors[j], thickness=2)
-                print(f'{gt_x,gt_y,dx_min,dy_min,dx_max,dy_max}')
+                # print(f'{gt_x,gt_y,dx_min,dy_min,dx_max,dy_max}')
     
     #pred
     for i in range(len(pred_confidence)):
         for j in range(class_num):
             if pred_confidence[i,j]>0.5:
-                print("PRED")
                 #TODO:
                 #image3: draw network-predicted bounding boxes on image3
                 gt_x, gt_y = boxs_default[i, 2] * pred_box[i, 0] + boxs_default[i, 0], boxs_default[i, 3] * pred_box[
@@ -76,7 +71,7 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
                 d_start = (int(dx_min * w), int(dy_min * h))
                 d_end = (int(dx_max * w), int(dy_max * h))
                 cv2.rectangle(image4, d_start, d_end, colors[j], thickness=2)
-                print(f'{gt_x, gt_y, dx_min, dy_min, dx_max, dy_max}')
+                # print(f'{gt_x, gt_y, dx_min, dy_min, dx_max, dy_max}')
     #combine four images into one
     h,w,_ = image1.shape
     image = np.zeros([h*2,w*2,3], np.uint8)
@@ -92,7 +87,7 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
 
 
 
-def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.5, threshold=0.5):
+def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.1, threshold=0.8):
     #TODO: non maximum suppression
     #input:
     #confidence_  -- the predicted class labels from SSD, [num_of_boxes, num_of_classes]
@@ -110,7 +105,7 @@ def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.5, thresh
     reference_box = np.zeros_like(boxs_default)
     px, py, pw, ph = boxs_default[:,0], boxs_default[:,1], boxs_default[:,2], boxs_default[:,3]
     reference_box[:,0] = pw*box_[:,0] + px    # gx = pw*dx + px
-    reference_box[:,1] = py*box_[:,1] + py    # gy = py*dy + py
+    reference_box[:,1] = ph*box_[:,1] + py    # gy = ph*dy + py
     reference_box[:,2] = pw*np.exp(box_[:,2])   # gw = pw * exp(dw)
     reference_box[:,3] = ph*np.exp(box_[:,3])   # gh = ph * exp(dh)
     reference_box[:,4] = reference_box[:,0] - reference_box[:,2] / 2 # min_x
@@ -121,7 +116,7 @@ def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.5, thresh
     B_box = []
     # pick the one with the highest probability in classes
     max_conf = np.max(conf[:,0:num_cls-1], axis=1)
-    # pick indices > threshold
+    # pick indices that has conf > threshold
     A_box = np.where(max_conf >= threshold)[0]
     if len(A_box) == 0: # pick max if no indices > threshold
         B_box.append(np.argmax(max_conf))
@@ -141,8 +136,10 @@ def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.5, thresh
         pred_confidence_[idx] = confidence_[idx]
     return np.array(pred_confidence_),pred_box_
 
-def generate_mAP():
+#update_precision_recall(pred_confidence_, pred_box_, ann_confidence_.numpy(), ann_box_.numpy(), boxs_default,precision_,recall_,thres)
+def generate_mAP(pred_confidence_, pred_box_, ann_confidence_, ann_box_, boxs_default,precision_,recall_,thres = 0.5):
     #TODO: Generate mAP
+
     pass
 
 
