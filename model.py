@@ -25,18 +25,6 @@ def SSD_loss(pred_confidence, pred_box, ann_confidence, ann_box):
     #
     #output:
     #loss -- a single number for the value of the loss function, [1]
-    
-    #TODO: write a loss function for SSD
-    #
-    #For confidence (class labels), use cross entropy (F.cross_entropy)
-    #You can try F.binary_cross_entropy and see which loss is better
-    #For box (bounding boxes), use smooth L1 (F.smooth_l1_loss)
-    #
-    #Note that you need to consider cells carrying objects and empty cells separately.
-    #I suggest you to reshape confidence to [batch_size*num_of_boxes, num_of_classes]
-    #and reshape box to [batch_size*num_of_boxes, 4].
-    #Then you need to figure out how you can get the indices of all cells carrying objects,
-    #and use confidence[indices], box[indices] to select those cells.
     batch_size, num_box,num_classes = pred_confidence.shape
     # Reshape
     pred_confidence = pred_confidence.view(batch_size * num_box, num_classes)
@@ -49,10 +37,10 @@ def SSD_loss(pred_confidence, pred_box, ann_confidence, ann_box):
     noobj_indices = torch.where(ann_confidence[:, -1] == 1)[0]
 
     obj_conf_pred = pred_confidence[obj_indices]
-    obj_conf_gt = ann_confidence[obj_indices].argmax(dim=-1) # convert one-hot to class
+    obj_conf_gt = ann_confidence[obj_indices]
 
     noobj_conf_pred = pred_confidence[noobj_indices]
-    noobj_conf_gt = ann_confidence[noobj_indices].argmax(dim=-1)
+    noobj_conf_gt = ann_confidence[noobj_indices]
 
     obj_box = pred_box[obj_indices]
     obj_box_gt = ann_box[obj_indices]
@@ -156,7 +144,7 @@ class SSD(nn.Module):
     def forward(self, x):
         #input:
         #x -- images, [batch_size, 3, 320, 320]
-        #TODO: define forward
+        # define forward
         x = x / 255.0
         x = self.conv1(x)
         x = self.conv2(x)
@@ -168,22 +156,18 @@ class SSD(nn.Module):
         r3 = self.conv7(r2)
 
         B, C, H, W = r0.shape
-        # print(f"B,C,W,H = {B,C,W,H}")
         r0_l = self.r1_l(r0).view(B, 16, H * W)     # reshape
         r0_r = self.r1_r(r0).view(B, 16, H * W)
 
         B, C, H, W = r1.shape
-        # print(f"B,C,W,H = {B, C, W, H}")
         r1_l = self.r2_l(r1).view(B, 16, H * W)  # reshape
         r1_r = self.r2_r(r1).view(B, 16, H * W)
 
         B, C, H, W = r2.shape
-        # print(f"B,C,W,H = {B, C, W, H}")
         r2_l = self.r3_l(r2).view(B, 16, H * W)
         r2_r = self.r3_r(r2).view(B, 16, H * W)
 
         B, C, H, W = r3.shape
-        # print(f"B,C,W,H = {B, C, W, H}")
         r3_l = self.r4_l(r3).view(B, 16, H * W)
         r3_r = self.r4_r(r3).view(B, 16, H * W)
 
@@ -199,11 +183,7 @@ class SSD(nn.Module):
         # apply softmax on classes
         confidence = torch.softmax(output_conf, 2)
         #should you apply softmax to confidence? (search the pytorch tutorial for F.cross_entropy.) If yes, which dimension should you apply softmax?
-        
-        #sanity check: print the size/shape of the confidence and bboxes, make sure they are as follows:
-        #confidence - [batch_size,4*(10*10+5*5+3*3+1*1),num_of_classes]
-        #bboxes - [batch_size,4*(10*10+5*5+3*3+1*1),4]
-        
+
         return confidence,bboxes
 
 

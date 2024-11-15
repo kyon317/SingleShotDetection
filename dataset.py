@@ -90,19 +90,11 @@ def match(ann_box,ann_confidence,boxs_default,threshold,cat_id,x_min,y_min,x_max
     
     #compute iou between the default bounding boxes and the ground truth bounding box
     ious = iou(boxs_default, x_min,y_min,x_max,y_max)
-    # print(ious)
     ious_true = ious > threshold
-    # ious_true = np.where(ious > threshold)
-    # print(ious_true)
-
 
     gx,gy = (x_max + x_min)/2, (y_max + y_min)/2 # get center of ground truth box
     gw,gh = x_max - x_min, y_max - y_min    # get width, height
 
-    #TODO:
-    #update ann_box and ann_confidence, with respect to the ious and the default bounding boxes.
-    #if a default bounding box and the ground truth bounding box have iou>threshold, then we will say this default bounding box is carrying an object.
-    #this default bounding box will be used to update the corresponding entry in ann_box and ann_confidence
     for i in np.where(ious_true == 1)[0]:
         px,py,pw,ph = boxs_default[i][:4] # get from default box
         tx = (gx - px) / pw
@@ -115,18 +107,16 @@ def match(ann_box,ann_confidence,boxs_default,threshold,cat_id,x_min,y_min,x_max
         ann_confidence[i, :] = 0 # remove background label
         ann_confidence[i, cat_id] = 1 #cat dog person background
 
-    # TODO:
-    # make sure at least one default bounding box is used
-    # update ann_box and ann_confidence (do the same thing as above)
     if ious.max() < threshold:
         ious_true = np.argmax(ious)
         px, py, pw, ph = boxs_default[ious_true][:4]  # get from default box
+        if pw == 0 or ph == 0:
+            print(px,py,pw,ph)
         tx = (gx - px) / pw
         ty = (gy - py) / ph
         tw = np.log(gw / pw)
         th = np.log(gh / ph)
 
-        # ann_box[ious_true] = [abs(tx),abs(ty),abs(tw),abs(th)]
         ann_box[ious_true] = [tx, ty, tw, th]
         ann_confidence[ious_true,:] = 0 # remove background label
         ann_confidence[ious_true, cat_id] = 1  # cat dog person background
@@ -147,9 +137,6 @@ class COCO(torch.utils.data.Dataset):
         
         self.img_names = os.listdir(self.imgdir)
         self.image_size = image_size
-        
-        #notice:
-        #you can split the dataset into 90% training and 10% validation here, by slicing self.img_names with respect to self.train
 
         # split train set & val set
         self.train_set, self.val_set = random_split(self.img_names, (0.9, 0.1))
@@ -213,6 +200,8 @@ class COCO(torch.utils.data.Dataset):
                     class_id = int(ann_data[0])
                     gx, gy, gw, gh = float(ann_data[1]),float(ann_data[2]),float(ann_data[3]),float(ann_data[4])
                     x_min, y_min, x_max, y_max = gx, gy, gx + gw, gy + gh
+                    if x_min >= x_max or y_min >= y_max: # illegal box
+                        continue
                     bboxes.append([x_min, y_min, x_max, y_max])
                     labels.append(class_id)
 
@@ -230,7 +219,10 @@ class COCO(torch.utils.data.Dataset):
             # Normalization
             x_min, y_min, x_max, y_max = x_min / self.image_size, y_min / self.image_size, x_max / self.image_size, y_max / self.image_size
             x_min, y_min, x_max, y_max = np.clip([x_min, y_min, x_max, y_max], 0, 1)
+            if x_min >= x_max or y_min >= y_max:
+                continue
             # 3. use the above function "match" to update ann_box and ann_confidence, for each bounding box in "ann_name".
             match(ann_box, ann_confidence, self.boxs_default, self.threshold, int(labels[i]), x_min, y_min, x_max, y_max)
-
+        if self.test:
+            return image, ann_box, ann_confidence, int(self.img_names[index][:-4])
         return image, ann_box, ann_confidence

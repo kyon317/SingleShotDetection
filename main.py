@@ -12,6 +12,7 @@ import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
+import wandb
 from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -31,7 +32,7 @@ args = parser.parse_args()
 
 class_num = 4 #cat dog person background
 
-num_epochs = 200
+num_epochs = 150
 batch_size = 32
 
 
@@ -59,6 +60,12 @@ if not args.test:
     precision_, recall_, thres = 0,0,0.6
     device = ('cuda' if torch.cuda.is_available() else 'cpu')
 
+    wandb.init(project="assignment3_ssd_training", config={
+        "learning_rate": 1e-4,
+        "epochs": num_epochs,
+        "batch_size": batch_size,
+        "image_size": 320
+    })
     #TRAINING
     for epoch in range(num_epochs):
 
@@ -90,7 +97,7 @@ if not args.test:
         # reduce lr if stuck in a plateau for 5 epochs
         scheduler.step(current_loss)
         print('[%d] time: %f train loss: %f' % (epoch, time.time()-start_time, current_loss))
-        
+        wandb.log({'epoch_loss': current_loss})
         #visualize
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
@@ -99,11 +106,9 @@ if not args.test:
         
         #VALIDATION
         network.eval()
-        
-        # TODO: split the dataset into 90% training and 10% validation
+
         # use the training set to train and the validation set to evaluate
         progress_bar = tqdm(dataloader_val, desc=f"Validation Epoch {epoch + 1}/{num_epochs}")
-        val_loss,val_loss_count,avg_val_loss = 0, 0, 0
         # Use tqdm for the validation loop as well
         for i, data in enumerate(progress_bar, 0):
             images_, ann_box_, ann_confidence_ = data
@@ -116,12 +121,19 @@ if not args.test:
             
             pred_confidence_ = pred_confidence.detach().cpu().numpy()
             pred_box_ = pred_box.detach().cpu().numpy()
+            #pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
+            #pred_box_ = pred_box[0].detach().cpu().numpy()
+            pred_confidence_suppressed, pred_box_suppressed = non_maximum_suppression(pred_confidence[0].detach().cpu().numpy(), pred_box[0].detach().cpu().numpy(), boxs_default)
 
-
-            progress_bar.set_description(f"Validation Epoch {epoch + 1}/{num_epochs}, mAP: {precision_:.4f}, Recall: {recall_:.4f}")
             #optional: implement a function to accumulate precision and recall to compute mAP or F1.
-            # generate_mAP(pred_confidence_, pred_box_, ann_confidence_.detach().cpu().numpy(), ann_box_.detach().cpu().numpy(), boxs_default,precision_,recall_,thres)
-
+            map_res = generate_mAP(
+                pred_confidence_=pred_confidence_suppressed, pred_box_=pred_box_suppressed,
+                ann_confidence_=ann_confidence_[0].detach().cpu().numpy(), ann_box_=ann_box_[0].detach().cpu().numpy(),
+                boxs_default=boxs_default
+            )
+            precision_ = map_res["map"].item()
+            progress_bar.set_description(f"Validation Epoch {epoch + 1}/{num_epochs}, mAP: {precision_:.4f}")
+            wandb.log({'mAP': precision_ * 100})
         #visualize
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
@@ -137,8 +149,9 @@ if not args.test:
             print('saving net...')
             torch.save(network.state_dict(), 'network.pth')
             #save last network
-        # print('saving net...')
-        # torch.save(network.state_dict(), 'network.pth')
+        if epoch % 100 == 0:
+            print('saving net...')
+            torch.save(network.state_dict(), 'network_100.pth')
 
 
 else:
@@ -149,7 +162,7 @@ else:
     network.eval()
     
     for i, data in enumerate(dataloader_test, 0):
-        images_, ann_box_, ann_confidence_ = data
+        images_, ann_box_, ann_confidence_, image_id = data
         images = images_.cuda()
         ann_box = ann_box_.cuda()
         ann_confidence = ann_confidence_.cuda()
@@ -159,10 +172,12 @@ else:
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
         
-        pred_confidence_,pred_box_ = non_maximum_suppression(pred_confidence_,pred_box_,boxs_default)
-        # print(np.max(pred_box),np.max(pred_confidence_))
-        #TODO: save predicted bounding boxes and classes to a txt file.
-        #you will need to submit those files for grading this assignment
+        pred_confidence_,pred_box_ = non_maximum_suppression(pred_confidence_,pred_box_,boxs_default, overlap=0.1)
+
+
+        # save predicted bounding boxes and classes to a txt file.
+        save_txt(pred_box_, pred_confidence_, image_id.item(), boxs_default)
+
         if i % 100 == 0:
             visualize_pred("test", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
             cv2.waitKey(1000)
