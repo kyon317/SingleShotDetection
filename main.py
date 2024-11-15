@@ -132,7 +132,7 @@ if not args.test:
                 boxs_default=boxs_default
             )
             precision_ = precision_ + map_res["map"].item() if map_res["map"].item() > 0 else precision_
-            precision_ /= i + 1
+            precision_ /= (i + 1)
             progress_bar.set_description(f"Validation Epoch {epoch + 1}/{num_epochs}, mAP: {precision_:.4f}")
             wandb.log({'mAP': precision_ * 100})
         #visualize
