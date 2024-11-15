@@ -35,7 +35,7 @@ args = parser.parse_args()
 class_num = 4 #cat dog person background
 
 num_epochs = 100
-batch_size = 32
+batch_size = 64
 
 
 boxs_default = default_box_generator([10,5,3,1], [0.2,0.4,0.6,0.8], [0.1,0.3,0.5,0.7])
@@ -55,7 +55,8 @@ if not args.test:
     dataloader = torch.utils.data.DataLoader(dataset_train, batch_size=batch_size, shuffle=True, num_workers=0)
     dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=1, shuffle=False, num_workers=0)
     
-    optimizer = optim.Adam(network.parameters(), lr = 1e-4)
+    # optimizer = optim.Adam(network.parameters(), lr = 1e-4)
+    optimizer = optim.SGD(network.parameters(), lr = 1e-3, momentum = 0.9, weight_decay = 5e-4)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6)
     #feel free to try other optimizers and parameters.
     
@@ -64,7 +65,7 @@ if not args.test:
     device = ('cuda' if torch.cuda.is_available() else 'cpu')
     # wandb.login(key="dfbc225465acd4869d8ad4e94e87f2ace1ac0de0")
     wandb.init(project="assignment3_ssd_training", config={
-        "learning_rate": 1e-4,
+        "learning_rate": 1e-3,
         "epochs": num_epochs,
         "batch_size": batch_size,
         "image_size": 320
@@ -98,7 +99,7 @@ if not args.test:
 
             progress_bar.set_description(f"Training Epoch {epoch + 1}/{num_epochs}, Train_Loss: {current_loss:.4f}")
         # reduce lr if stuck in a plateau for 5 epochs
-        # scheduler.step(current_loss)
+        scheduler.step(current_loss)
         print('[%d] time: %f train loss: %f' % (epoch, time.time()-start_time, current_loss))
         wandb.log({'epoch_loss': current_loss})
         #visualize
@@ -136,7 +137,7 @@ if not args.test:
                 ann_confidence_=ann_confidence_[0].detach().cpu().numpy(), ann_box_=ann_box_[0].detach().cpu().numpy(),
                 boxs_default=boxs_default
             )
-            precision_ = map_res["map"].item() if map_res["map"].item() > 0 else 0
+            precision_ = map_res["map_50"].item() if map_res["map_50"].item() > 0 else 0
             total_precision += precision_
             cnt += 1
             progress_bar.set_description(f"Validation Epoch {epoch + 1}/{num_epochs}, mAP: {precision_:.4f}")
@@ -155,7 +156,7 @@ if not args.test:
         if epoch%10==9:
             #save last network
             print('saving net...')
-            torch.save(network.state_dict(), 'network_150.pth')
+            torch.save(network.state_dict(), 'network.pth')
         #     #save last network
         if epoch == 99:
             print('saving net...')
@@ -168,7 +169,7 @@ else:
     dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=0)
     # dataset_test = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False,test=True,image_size=320)
     # dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=0)
-    network.load_state_dict(torch.load('network_150.pth'))
+    network.load_state_dict(torch.load('network.pth'))
     network.eval()
     
     for i, data in enumerate(dataloader_test, 0):
@@ -188,7 +189,7 @@ else:
         # save predicted bounding boxes and classes to a txt file.
         # save_txt(pred_box_, pred_confidence_, image_id.item(), boxs_default)
 
-        if i % 5 == 0:
+        if i % 7 == 0:
             visualize_pred("test", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
             cv2.waitKey(1000)
 

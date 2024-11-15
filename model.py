@@ -46,7 +46,13 @@ def SSD_loss(pred_confidence, pred_box, ann_confidence, ann_box):
     obj_box = pred_box[obj_indices]
     obj_box_gt = ann_box[obj_indices]
 
-    loss_cls = F.cross_entropy(obj_conf_pred, obj_conf_gt) + 3 * F.cross_entropy(noobj_conf_pred, noobj_conf_gt)
+    class_weights = torch.tensor([1.0, 1.5, 2.0, 1.0]).to(pred_confidence.device)
+    # weights = torch.zeros_like(obj_conf_gt)
+    # weights[obj_conf_gt == 0] = 1.0
+    # weights[obj_conf_gt == 1] = 1.5
+    # weights[obj_conf_gt == 2] = 2.0
+
+    loss_cls = F.cross_entropy(obj_conf_pred, obj_conf_gt,weight=class_weights) + 3 * F.cross_entropy(noobj_conf_pred, noobj_conf_gt)
     loss_box = F.smooth_l1_loss(obj_box, obj_box_gt)
 
     return loss_cls + loss_box
