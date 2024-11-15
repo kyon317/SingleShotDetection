@@ -2,7 +2,6 @@ import torch.utils.data
 import numpy as np
 import os
 import cv2
-from torch.utils.tensorboard.summary import image
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import random_split
@@ -142,10 +141,10 @@ class COCO(torch.utils.data.Dataset):
         self.train_set, self.val_set = random_split(self.img_names, (0.9, 0.1))
         if self.test: # test
             pass
-        elif self.train: # train
-            self.img_names = self.train_set
-        else:           # validation
-            self.img_names = self.val_set
+        # elif self.train: # train
+        #     self.img_names = self.train_set
+        # else:           # validation
+        #     self.img_names = self.val_set
         # reference: https://albumentations.ai/docs/getting_started/bounding_boxes_augmentation/
         self.train_transforms = A.Compose([
             A.Resize(self.image_size, self.image_size),

@@ -93,7 +93,7 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
     # in that case, please save the image using cv2.imwrite and check the saved image for visualization.
 
 
-def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.1, threshold=0.8):
+def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.1, threshold=0.5):
     # TODO: non maximum suppression
     # input:
     # confidence_  -- the predicted class labels from SSD, [num_of_boxes, num_of_classes]
