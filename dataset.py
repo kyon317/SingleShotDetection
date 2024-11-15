@@ -16,7 +16,7 @@ def default_box_generator(layers, large_scale, small_scale):
     
     #output:
     #boxes -- default bounding boxes, shape=[box_num,8]. box_num=4*(10*10+5*5+3*3+1*1) for this assignment.
-    
+
     #TODO:
     #create an numpy array "boxes" to store default bounding boxes
     #you can create an array with shape [10*10+5*5+3*3+1*1,4,8], and later reshape it to [box_num,8]
@@ -164,7 +164,7 @@ class COCO(torch.utils.data.Dataset):
         self.test_transforms = A.Compose([
             A.Resize(self.image_size, self.image_size),
             ToTensorV2()
-        ])
+        ], bbox_params=A.BboxParams(format='pascal_voc',min_area=100, label_fields=['labels']))
     def __len__(self):
         return len(self.img_names)
 
@@ -213,7 +213,10 @@ class COCO(torch.utils.data.Dataset):
             bboxes = transformed['bboxes']
             labels = transformed['labels']
         else:
-            image = self.test_transforms(image=image)['image']
+            transformed= self.test_transforms(image=image,bboxes=bboxes,labels=labels)
+            image = transformed['image']
+            bboxes = transformed['bboxes']
+            labels = transformed['labels']
         for i,box in enumerate(bboxes):
             x_min, y_min, x_max, y_max = box
             # Normalization

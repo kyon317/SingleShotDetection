@@ -33,14 +33,15 @@ def SSD_loss(pred_confidence, pred_box, ann_confidence, ann_box):
     ann_box = ann_box.view(batch_size * num_box, num_classes)
 
     # Get obj & noobj indices
-    obj_indices = torch.where(ann_confidence[:, -1] != 1)[0]
-    noobj_indices = torch.where(ann_confidence[:, -1] == 1)[0]
+    ann_indices = torch.where(ann_confidence == 1)[1]
+    obj_indices = torch.where(ann_indices<num_classes-1)[0] # row
+    noobj_indices = torch.where(ann_indices == num_classes-1)[0]
 
     obj_conf_pred = pred_confidence[obj_indices]
-    obj_conf_gt = ann_confidence[obj_indices]
+    obj_conf_gt = ann_indices[obj_indices]
 
     noobj_conf_pred = pred_confidence[noobj_indices]
-    noobj_conf_gt = ann_confidence[noobj_indices]
+    noobj_conf_gt = ann_indices[noobj_indices]
 
     obj_box = pred_box[obj_indices]
     obj_box_gt = ann_box[obj_indices]

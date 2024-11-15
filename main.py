@@ -131,13 +131,14 @@ if not args.test:
                 ann_confidence_=ann_confidence_[0].detach().cpu().numpy(), ann_box_=ann_box_[0].detach().cpu().numpy(),
                 boxs_default=boxs_default
             )
-            precision_ = map_res["map"].item()
+            precision_ = precision_ + map_res["map"].item() if map_res["map"].item() > 0 else precision_
+            precision_ /= i + 1
             progress_bar.set_description(f"Validation Epoch {epoch + 1}/{num_epochs}, mAP: {precision_:.4f}")
             wandb.log({'mAP': precision_ * 100})
         #visualize
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
-        # visualize_pred("val", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
+        visualize_pred("val", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
         
         #optional: compute F1
         #F1score = 2*precision*recall/np.maximum(precision+recall,1e-8)
@@ -148,17 +149,19 @@ if not args.test:
             #save last network
             print('saving net...')
             torch.save(network.state_dict(), 'network.pth')
-            #save last network
-        if epoch % 100 == 0:
-            print('saving net...')
-            torch.save(network.state_dict(), 'network_100.pth')
+        #     #save last network
+        # if epoch == 30:
+        #     print('saving net...')
+        #     torch.save(network.state_dict(), 'network_30.pth')
 
 
 else:
     #TEST
     dataset_test = COCO("data/test/images/", "data/test/annotations/", class_num, boxs_default, train = False, test = True, image_size=320)
     dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=0)
-    network.load_state_dict(torch.load('network.pth'))
+    # dataset_test = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False,test=True,image_size=320)
+    # dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=0)
+    network.load_state_dict(torch.load('network_.pth'))
     network.eval()
     
     for i, data in enumerate(dataloader_test, 0):
@@ -178,7 +181,7 @@ else:
         # save predicted bounding boxes and classes to a txt file.
         save_txt(pred_box_, pred_confidence_, image_id.item(), boxs_default)
 
-        if i % 100 == 0:
+        if i % 5 == 0:
             visualize_pred("test", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
             cv2.waitKey(1000)
 
