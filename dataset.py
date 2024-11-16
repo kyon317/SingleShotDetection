@@ -158,12 +158,12 @@ class COCO(torch.utils.data.Dataset):
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
             A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
             A.Resize(self.image_size, self.image_size),
-            A.Normalize(mean=(0.485, 0.456, 0.406),std=(0.229, 0.224, 0.225)),
+            # A.Normalize(mean=(0.485, 0.456, 0.406),std=(0.229, 0.224, 0.225)),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc',min_area=100, label_fields=['labels']))
         self.test_transforms = A.Compose([
             A.Resize(self.image_size, self.image_size),
-            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            # A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc',min_area=100, label_fields=['labels']))
     def __len__(self):

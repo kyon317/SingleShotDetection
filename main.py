@@ -13,6 +13,7 @@ import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from sympy import false
+from torch.utils.data import WeightedRandomSampler
 
 import wandb
 from torch.autograd import Variable
@@ -34,8 +35,8 @@ args = parser.parse_args()
 
 class_num = 4 #cat dog person background
 
-num_epochs = 100
-batch_size = 64
+num_epochs = 150
+batch_size = 32
 
 
 boxs_default = default_box_generator([10,5,3,1], [0.2,0.4,0.6,0.8], [0.1,0.3,0.5,0.7])
@@ -51,8 +52,23 @@ if not args.test:
     dataset = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = True,test=False,image_size=320)
     dataset_train, dataset_val = random_split(dataset, (0.9, 0.1))
     # dataset_val = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False,test=False,image_size=320)
-    
     dataloader = torch.utils.data.DataLoader(dataset_train, batch_size=batch_size, shuffle=True, num_workers=0)
+    # class_counts = [992,886,5102]
+    # sample_weights = 1.0 / torch.tensor(class_counts, dtype=torch.float)
+    # ann = []
+    #
+    #
+
+    # for batch in dataloader:
+    #     _, _, one_hots = batch
+    #     one_hots = one_hots.reshape(-1,4)
+    #     obj_indices = np.where(np.argmax(one_hots,1) < 3)[0]
+    #     objs = one_hots[obj_indices]
+    #     ann.extend(np.argmax(objs,1))
+    #
+    # sample_weights = torch.tensor([sample_weights[i] for i in ann],dtype=torch.float) # assigning weights to sample_weights
+    # sampler = WeightedRandomSampler(sample_weights,len(sample_weights))
+    # dataloader = torch.utils.data.DataLoader(dataset_train, batch_size=batch_size, sampler=sampler, shuffle=False, num_workers=0)
     dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=1, shuffle=False, num_workers=0)
     
     # optimizer = optim.Adam(network.parameters(), lr = 1e-4)
@@ -157,10 +173,10 @@ if not args.test:
             #save last network
             print('saving net...')
             torch.save(network.state_dict(), 'network.pth')
-        #     #save last network
-        if epoch == 99:
-            print('saving net...')
-            torch.save(network.state_dict(), 'network_100.pth')
+        # save last network
+        # if epoch == 99:
+        #     print('saving net...')
+        #     torch.save(network.state_dict(), 'network_100.pth')
 
 
 else:
