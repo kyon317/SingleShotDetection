@@ -92,6 +92,42 @@ def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_bo
     # if you are using a server, you may not be able to display the image.
     # in that case, please save the image using cv2.imwrite and check the saved image for visualization.
 
+def visualize_res(pred_confidence, pred_box, image_, boxs_default, threshold = 0.5):
+    _, class_num = pred_confidence.shape
+    class_num = class_num - 1  # Exclude the background class
+    class_names = ["cat", "dog", "human"]
+    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]  # Colors for each class (Blue, Green, Red)
+
+    # Prepare the input image
+    image = np.transpose(image_, (1, 2, 0)).astype(np.uint8)  # Convert (C, H, W) to (H, W, C)
+    h, w, _ = image.shape
+    image1 = np.zeros(image.shape, np.uint8)
+    image1[:] = image[:]
+    # Draw predicted bounding boxes
+    for i in range(len(pred_confidence)):
+        for j in range(class_num):
+            if pred_confidence[i, j] > threshold:  # Confidence threshold
+                # Calculate predicted bounding box coordinates
+                gt_x, gt_y = boxs_default[i, 2] * pred_box[i, 0] + boxs_default[i, 0], \
+                             boxs_default[i, 3] * pred_box[i, 1] + boxs_default[i, 1]
+                gt_w, gt_h = boxs_default[i, 2] * np.exp(pred_box[i, 2]), \
+                             boxs_default[i, 3] * np.exp(pred_box[i, 3])
+                gt_start = (int((gt_x - gt_w / 2.0) * w), int((gt_y - gt_h / 2.0) * h))
+                gt_end = (int((gt_x + gt_w / 2.0) * w), int((gt_y + gt_h / 2.0) * h))
+
+                # Draw rectangle for predicted bounding box
+                cv2.rectangle(image1, gt_start, gt_end, colors[j], thickness=2)
+
+                # Add class name and confidence as text
+                label = f"{class_names[j]}: {pred_confidence[i, j]:.2f}"
+                (text_width, text_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)
+                text_start = (min(gt_start[0], w - text_width - 5), max(gt_start[1] - 10, 20))  # Position text above the box
+                cv2.putText(image1, label, text_start, cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.75, color=colors[j], thickness=2)
+
+    # Display the result
+    cv2.imshow(" Predicted Bounding Boxes", image1)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 def non_maximum_suppression(confidence_, box_, boxs_default, overlap=0.1, threshold=0.5):
     # TODO: non maximum suppression

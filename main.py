@@ -12,7 +12,6 @@ import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
-from sympy import false
 from torch.utils.data import WeightedRandomSampler
 
 import wandb
@@ -50,15 +49,13 @@ cudnn.benchmark = True
 
 if not args.test:
     dataset = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = True,test=False,image_size=320)
-    dataset_train, dataset_val = random_split(dataset, (0.9, 0.1))
-    # dataset_val = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False,test=False,image_size=320)
+    dataset_train, dataset_val = random_split(dataset, (0.9, 0.1)) # split train vs validation
     dataloader = torch.utils.data.DataLoader(dataset_train, batch_size=batch_size, shuffle=True, num_workers=0)
     dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=1, shuffle=False, num_workers=0)
     
     optimizer = optim.Adam(network.parameters(), lr = 1e-4, weight_decay = 5e-4)
     # optimizer = optim.SGD(network.parameters(), lr = 1e-3, momentum = 0.9, weight_decay = 5e-4)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6)
-    #feel free to try other optimizers and parameters.
     
     start_time = time.time()
     precision_, recall_, thres = 0,0,0.6
@@ -147,20 +144,12 @@ if not args.test:
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
         # visualize_pred("val", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
-        
-        #optional: compute F1
-        #F1score = 2*precision*recall/np.maximum(precision+recall,1e-8)
-        #print(F1score)
-        
+
         #save weights
         if epoch%10==9:
             #save last network
             print('saving net...')
             torch.save(network.state_dict(), 'network.pth')
-        # save last network
-        # if epoch == 99:
-        #     print('saving net...')
-        #     torch.save(network.state_dict(), 'network_100.pth')
 
 
 else:
@@ -190,7 +179,7 @@ else:
         save_txt(pred_box_, pred_confidence_, image_id.item(), boxs_default)
 
         # if i % 7 == 0:
-        visualize_pred("test", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
+        visualize_res(pred_confidence_, pred_box_, images_[0].numpy(), boxs_default)
         cv2.waitKey(1000)
 
 
