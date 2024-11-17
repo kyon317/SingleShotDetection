@@ -2,10 +2,10 @@ from PIL import ImageDraw
 from PIL import Image
 
 def draw_annotation_box():
-    image_path = "data/test/images/00708.jpg"
+    image_path = "data/test/images/00002.jpg"
     image = Image.open(image_path)
 
-    annotation_path = "results/00708.txt"
+    annotation_path = "results/00002.txt"
     with open(annotation_path, "r") as file:
         line = file.readline().strip()
         class_id, xmin, ymin, w, h = map(float, line.split())

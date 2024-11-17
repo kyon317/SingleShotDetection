@@ -53,33 +53,17 @@ if not args.test:
     dataset_train, dataset_val = random_split(dataset, (0.9, 0.1))
     # dataset_val = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False,test=False,image_size=320)
     dataloader = torch.utils.data.DataLoader(dataset_train, batch_size=batch_size, shuffle=True, num_workers=0)
-    # class_counts = [992,886,5102]
-    # sample_weights = 1.0 / torch.tensor(class_counts, dtype=torch.float)
-    # ann = []
-    #
-    #
-
-    # for batch in dataloader:
-    #     _, _, one_hots = batch
-    #     one_hots = one_hots.reshape(-1,4)
-    #     obj_indices = np.where(np.argmax(one_hots,1) < 3)[0]
-    #     objs = one_hots[obj_indices]
-    #     ann.extend(np.argmax(objs,1))
-    #
-    # sample_weights = torch.tensor([sample_weights[i] for i in ann],dtype=torch.float) # assigning weights to sample_weights
-    # sampler = WeightedRandomSampler(sample_weights,len(sample_weights))
-    # dataloader = torch.utils.data.DataLoader(dataset_train, batch_size=batch_size, sampler=sampler, shuffle=False, num_workers=0)
     dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=1, shuffle=False, num_workers=0)
     
-    # optimizer = optim.Adam(network.parameters(), lr = 1e-4)
-    optimizer = optim.SGD(network.parameters(), lr = 1e-3, momentum = 0.9, weight_decay = 5e-4)
+    optimizer = optim.Adam(network.parameters(), lr = 1e-4, weight_decay = 5e-4)
+    # optimizer = optim.SGD(network.parameters(), lr = 1e-3, momentum = 0.9, weight_decay = 5e-4)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6)
     #feel free to try other optimizers and parameters.
     
     start_time = time.time()
     precision_, recall_, thres = 0,0,0.6
     device = ('cuda' if torch.cuda.is_available() else 'cpu')
-    # wandb.login(key="dfbc225465acd4869d8ad4e94e87f2ace1ac0de0")
+
     wandb.init(project="assignment3_ssd_training", config={
         "learning_rate": 1e-3,
         "epochs": num_epochs,
@@ -185,7 +169,7 @@ else:
     dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=0)
     # dataset_test = COCO("data/train/images/", "data/train/annotations/", class_num, boxs_default, train = False,test=True,image_size=320)
     # dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, shuffle=False, num_workers=0)
-    network.load_state_dict(torch.load('network.pth'))
+    network.load_state_dict(torch.load('network_150.pth'))
     network.eval()
     
     for i, data in enumerate(dataloader_test, 0):
@@ -199,15 +183,15 @@ else:
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
         
-        pred_confidence_,pred_box_ = non_maximum_suppression(pred_confidence_,pred_box_,boxs_default, overlap=0.3)
+        pred_confidence_,pred_box_ = non_maximum_suppression(pred_confidence_,pred_box_,boxs_default, overlap=0.1,threshold=0.9)
 
 
         # save predicted bounding boxes and classes to a txt file.
-        # save_txt(pred_box_, pred_confidence_, image_id.item(), boxs_default)
+        save_txt(pred_box_, pred_confidence_, image_id.item(), boxs_default)
 
-        if i % 7 == 0:
-            visualize_pred("test", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
-            cv2.waitKey(1000)
+        # if i % 7 == 0:
+        visualize_pred("test", pred_confidence_, pred_box_, ann_confidence_[0].numpy(), ann_box_[0].numpy(), images_[0].numpy(), boxs_default)
+        cv2.waitKey(1000)
 
 
 
