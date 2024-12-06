@@ -3,6 +3,7 @@ import os
 import cv2
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 # pip install pycocotools
 from torchmetrics.detection import MeanAveragePrecision
 
@@ -11,7 +12,7 @@ from dataset import iou
 colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
 
 
-# use [blue green red] to represent different classes
+# use [blue, green, red] to represent different classes
 
 def visualize_pred(windowname, pred_confidence, pred_box, ann_confidence, ann_box, image_, boxs_default):
     # input:
@@ -286,8 +287,24 @@ def generate_mAP(pred_confidence_, pred_box_, ann_confidence_, ann_box_, boxs_de
         "labels": label,
     }]
     # Initialize MeanAveragePrecision metric and update with predictions and targets
-    metric = MeanAveragePrecision(iou_type="bbox")
+    metric = MeanAveragePrecision(iou_type="bbox",extended_summary=True)
     metric.warn_on_many_detections = False
     metric.update(preds, targets)
     res = metric.compute()
-    return res
+    return res,pred_confidence_tensor[0,:3] if pred_confidence_tensor is not None else None,label[0] if label is not None else None
+
+# plot precision-recall curve
+def plot_precision_recall(precision, recall, cls_num):
+    colors = ['red', 'blue', 'green']
+    labels = ['Human', 'Cat', 'Dog']
+    plt.figure(figsize=(8, 6))
+    for i in range(cls_num):
+        plt.plot(recall[i], precision[i], label=labels[i], color=colors[i])
+
+    plt.xlabel('Recall', fontsize=14)
+    plt.ylabel('Precision', fontsize=14)
+    plt.title('Precision-Recall Curve', fontsize=16)
+    plt.legend()
+    plt.grid(True)
+
+    plt.show()

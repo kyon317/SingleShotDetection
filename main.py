@@ -13,7 +13,8 @@ import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.utils.data import WeightedRandomSampler
-
+from torchmetrics.functional import precision_recall_curve
+from torchmetrics.classification import MulticlassPrecisionRecallCurve
 import wandb
 from torch.autograd import Variable
 import torch.nn.functional as F
@@ -34,7 +35,7 @@ args = parser.parse_args()
 
 class_num = 4 #cat dog person background
 
-num_epochs = 150
+num_epochs = 1
 batch_size = 32
 
 
@@ -44,6 +45,7 @@ boxs_default = default_box_generator([10,5,3,1], [0.2,0.4,0.6,0.8], [0.1,0.3,0.5
 #Create network
 network = SSD(class_num)
 network.cuda()
+network.load_state_dict(torch.load('network_150.pth'))
 cudnn.benchmark = True
 
 
@@ -99,6 +101,7 @@ if not args.test:
         scheduler.step(current_loss)
         print('[%d] time: %f train loss: %f' % (epoch, time.time()-start_time, current_loss))
         wandb.log({'epoch_loss': current_loss})
+
         #visualize
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
@@ -111,7 +114,8 @@ if not args.test:
         # use the training set to train and the validation set to evaluate
         progress_bar = tqdm(dataloader_val, desc=f"Validation Epoch {epoch + 1}/{num_epochs}")
         cnt = 0
-        total_precision = 0
+        total_mAP = 0
+        metric = MulticlassPrecisionRecallCurve(num_classes=3)
         # Use tqdm for the validation loop as well
         for i, data in enumerate(progress_bar, 0):
             images_, ann_box_, ann_confidence_ = data
@@ -129,17 +133,25 @@ if not args.test:
             pred_confidence_suppressed, pred_box_suppressed = non_maximum_suppression(pred_confidence[0].detach().cpu().numpy(), pred_box[0].detach().cpu().numpy(), boxs_default)
 
             #optional: implement a function to accumulate precision and recall to compute mAP or F1.
-            map_res = generate_mAP(
+            map_res, preds, targets = generate_mAP(
                 pred_confidence_=pred_confidence_suppressed, pred_box_=pred_box_suppressed,
                 ann_confidence_=ann_confidence_[0].detach().cpu().numpy(), ann_box_=ann_box_[0].detach().cpu().numpy(),
                 boxs_default=boxs_default
             )
-            precision_ = map_res["map_50"].item() if map_res["map_50"].item() > 0 else 0
-            total_precision += precision_
+            mAP = map_res["map_50"].item() if map_res["map_50"].item() > 0 else 0
+            total_mAP += mAP
             cnt += 1
-            progress_bar.set_description(f"Validation Epoch {epoch + 1}/{num_epochs}, mAP: {precision_:.4f}")
-        avg_precision = total_precision / cnt
-        wandb.log({'mAP': avg_precision * 100})
+            if preds is not None and targets is not None:
+                preds = preds.unsqueeze(0) if preds.dim() == 1 else preds
+                targets = targets.unsqueeze(0) if targets.dim() == 0 else targets
+                metric.update(preds, targets)
+            progress_bar.set_description(f"Validation Epoch {epoch + 1}/{num_epochs}, mAP: {mAP:.4f}")
+        avg_mAP = total_mAP / cnt
+        wandb.log({'mAP': avg_mAP * 100})
+        fig_, ax_ = metric.plot(score=True)
+
+        fig_.savefig("precision_recall_curve.png")
+
         #visualize
         pred_confidence_ = pred_confidence[0].detach().cpu().numpy()
         pred_box_ = pred_box[0].detach().cpu().numpy()
